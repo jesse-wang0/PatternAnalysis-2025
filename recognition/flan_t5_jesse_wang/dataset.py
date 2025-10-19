@@ -2,7 +2,7 @@ from datasets import load_dataset
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader
 
-def load_bio_lay_summ_data(model_name, batch_size=8, train_split_ratio=0.8):
+def load_bio_lay_summ_data(model_name, batch_size=8, eval_batch_size=4, train_split_ratio=0.8):
     """
     Returns tokenized datasets ready for Trainer
     """
@@ -47,8 +47,8 @@ def load_bio_lay_summ_data(model_name, batch_size=8, train_split_ratio=0.8):
     print(tokenized_test)
 
     train_loader = DataLoader(tokenized_train, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(tokenized_val, batch_size=batch_size)
-    test_loader = DataLoader(tokenized_test, batch_size=batch_size)
+    val_loader = DataLoader(tokenized_val, batch_size=eval_batch_size)
+    test_loader = DataLoader(tokenized_test, batch_size=eval_batch_size)
     
     return train_loader, val_loader, test_loader
 

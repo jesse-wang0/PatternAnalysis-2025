@@ -1,88 +1,94 @@
 import torch
 from dataset import load_bio_lay_summ_data
-from modules import BioLaySummT5Flan
 import random
 import evaluate
 
 from dataset import load_bio_lay_summ_data
-from modules import BioLaySummT5Flan
+from modules import BioLaySummT5Flan, PretrainedT5, FineTunedT5
 
-# MODEL_NAME = "google/flan-t5-base"
-MODEL_NAME = "google/flan-t5-small"
 NUM_SAMPLES = 10
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
-    
+
+    pre_trained_small = PretrainedT5(model_name="google/flan-t5-small")
+    pre_trained_base = PretrainedT5(model_name="google/flan-t5-base")
+    models = [pre_trained_small, pre_trained_base]
+
     data = load_bio_lay_summ_data(
-        MODEL_NAME,
+        models[0].tokenizer,  # all use same tokenizer
         batch_size=8,
         eval_batch_size=4
     )
     test_loader = data["loaders"]["test"]
 
-    model = BioLaySummT5Flan()
-    model = model.to(device)
+    test_t5_flan(device, models, test_loader)
 
-    test_t5_flan(device, model, test_loader)
+def test_t5_flan(
+    device: torch.device, 
+    models,
+    test_loader,
+):
+    for model in models:
+        model = model.to(device)
 
-def test_t5_flan(device, model, test_loader, num_samples=10):
-    model.eval()
-    test_loss = 0.0
-    all_input_texts = []
-    all_labels_texts = []
+        model.eval()
+        test_loss = 0.0
+        all_inputs = []
+        all_ground_truths = []
+        all_predictions = []
 
-    # --- Compute average loss ---
-    with torch.no_grad():
-        for batch in test_loader:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
+        # --- Compute average loss ---
+        with torch.no_grad():
+            for batch in test_loader:
+                input_ids = batch["input_ids"].to(device)
+                attention_mask = batch["attention_mask"].to(device)
+                labels = batch["labels"].to(device)
 
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            test_loss += outputs.loss.item()
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                test_loss += outputs.loss.item()
 
-            # For generating samples later
-            all_input_texts.extend(model.tokenizer.batch_decode(input_ids, skip_special_tokens=True))
-            all_labels_texts.extend(model.tokenizer.batch_decode(labels, skip_special_tokens=True))
+                # For generating samples later
+                all_inputs.extend(model.tokenizer.batch_decode(input_ids, skip_special_tokens=True))
+                all_ground_truths.extend(model.tokenizer.batch_decode(labels, skip_special_tokens=True))
 
-    avg_test_loss = test_loss / len(test_loader)
-    print(f"\nAverage Test Loss: {avg_test_loss:.4f}\n")
+                 # Generate predictions
+                generated_ids = model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    max_length=128
+                )
+                all_predictions.extend(model.tokenizer.batch_decode(generated_ids, skip_special_tokens=True))
 
-    # --- Generate sample summaries ---
-    sample_indices = random.sample(range(len(all_input_texts)), min(num_samples, len(all_input_texts)))
-    sample_texts = [all_input_texts[i] for i in sample_indices]
-    reference_texts = [all_labels_texts[i] for i in sample_indices]
+        avg_test_loss = test_loss / len(test_loader)
+        print(f"\nAverage Test Loss: {avg_test_loss:.4f}\n")
 
-    inputs = model.tokenizer(
-        sample_texts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=512
-    ).to(device)
-
-    generated_ids = model.generate(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], max_length=128)
-    generated_texts = model.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-
-    print("=== Sample Summaries ===")
-    for i, (inp, ref, pred) in enumerate(zip(sample_texts, reference_texts, generated_texts), 1):
-        print(f"\nSample {i}:")
-        print(f"Original Report: {inp}")
-        print(f"Reference Summary: {ref}")
-        print(f"Predicted Summary: {pred}")
-    
-    rouge = evaluate.load("rouge")
-    results = rouge.compute(
-        predictions=generated_texts,
-        references=reference_texts,
-        rouge_types=["rouge1", "rouge2", "rougeL", "rougeLsum"]
-    )
-
-    print("\n=== ROUGE Scores ===")
-    for metric, value in results.items():
-        print(f"{metric}: {value:.4f}")
+        # --- Generate sample summaries ---
+        random.seed(0)
+        sample_indices = random.sample(range(len(all_inputs)), min(NUM_SAMPLES, len(all_inputs)))
         
+        sample_texts = [all_inputs[i] for i in sample_indices]
+        reference_texts = [all_ground_truths[i] for i in sample_indices]
+        generated_texts = [all_predictions[i] for i in sample_indices]
+
+        print("=== Sample Summaries ===")
+        for i, (inp, ref, pred) in enumerate(zip(sample_texts, reference_texts, generated_texts), 1):
+            print(f"\nSample {i}:")
+            print(f"Original Report: {inp}")
+            print(f"Reference Summary: {ref}")
+            print(f"Predicted Summary: {pred}")
+        
+        rouge = evaluate.load("rouge")
+        results = rouge.compute(
+            predictions=all_predictions,
+            references=all_ground_truths,
+            rouge_types=["rouge1", "rouge2", "rougeL", "rougeLsum"]
+        )
+
+        print(f"\n=== ROUGE Scores for {model.model_name} ===")
+        for metric, value in results.items():
+            print(f"{metric}: {value:.4f}")
+
 if __name__ == "__main__":
     main()

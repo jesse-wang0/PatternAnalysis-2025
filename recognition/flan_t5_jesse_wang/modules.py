@@ -6,13 +6,19 @@ https://www.datacamp.com/tutorial/flan-t5-tutorial
 https://www.kaggle.com/code/paultimothymooney/fine-tune-flan-t5-with-peft-lora-deeplearning-ai
 '''
 
-MODEL_NAME = "google/flan-t5-small"
-
 class BioLaySummT5Flan(nn.Module):
-    def __init__(self):
+    def __init__(self, model_name=None, model_path=None):
         super().__init__()
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        if model_path is not None:
+            # Load fine-tuned model from local checkpoint
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        elif model_name is not None:
+            # Load pre-trained model from HuggingFace
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        else:
+            raise ValueError("Either model_name or model_path must be provided.")
 
     def forward(self, input_ids, attention_mask, labels=None):
         return self.model(
@@ -50,3 +56,11 @@ class BioLaySummT5Flan(nn.Module):
         """Set the model to evaluation mode."""
         self.model.train(False)
         return self
+
+class PretrainedT5(BioLaySummT5Flan):
+    def __init__(self, model_name):
+        super().__init__(model_name=model_name)
+
+class FineTunedT5(BioLaySummT5Flan):
+    def __init__(self, checkpoint_path):
+        super().__init__(model_path=checkpoint_path)

@@ -1,9 +1,10 @@
 import torch
+from torch import amp
 
 from dataset import load_bio_lay_summ_data
 from modules import BioLaySummT5Flan
 
-MODEL_NAME = "google/flan-t5-base"
+MODEL_NAME = "google/flan-t5-small"
 
 # --------------------------
 # HYPERPARAMETERS
@@ -40,32 +41,32 @@ def main():
 def train_t5_flan(device, model, optimiser, train_loader, val_loader):
    print(f"Starting training using {NUM_EPOCHS} epochs")
 
+   scaler = amp.GradScaler(device_type=device)
+
    for epoch in range(NUM_EPOCHS):
-      # --- Training Phase ---
-      # Set model to training mode
       model.train()
       running_loss = 0.0
 
       for batch in train_loader:
-         # Each batch is dict with input_ids, attention_mask, labels
          input_ids = batch["input_ids"].to(device)
          attention_mask = batch["attention_mask"].to(device)
          labels = batch["labels"].to(device)
 
-         # Forward pass
-         outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-         loss = outputs.loss
-
-         # Backward and optimize
          optimiser.zero_grad()
-         loss.backward()
 
+         with amp.autocast(device_type="cuda", dtype=torch.float16):
+               outputs = model(input_ids=input_ids,
+                              attention_mask=attention_mask,
+                              labels=labels)
+               loss = outputs.loss
+
+         scaler.scale(loss).backward()
          torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-         optimiser.step()
-         # scheduler.step()
-         
+         scaler.step(optimiser)
+         scaler.update()
+
          running_loss += loss.item()
-      
+         
       avg_train_loss = running_loss / len(train_loader)
       print(f'Epoch [{epoch+1}/{NUM_EPOCHS}], Training Loss: {avg_train_loss:.4f}')
 

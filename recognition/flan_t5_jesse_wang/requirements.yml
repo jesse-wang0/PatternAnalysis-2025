@@ -1,0 +1,21 @@
+name: bio_flan_t5
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pytorch::pytorch=2.5.1
+  - pytorch::torchvision=0.20.1
+  - pytorch::torchaudio=2.5.1
+  - pytorch::pytorch-cuda=11.8
+  - pip
+  - pip:
+      - transformers
+      - datasets
+      - evaluate
+      - rouge_score
+      - nltk
+      - absl-py
+      - accelerate
+      - sentencepiece

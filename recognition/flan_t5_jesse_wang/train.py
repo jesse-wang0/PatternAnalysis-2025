@@ -76,7 +76,7 @@ def train_with_trainer(model, train_dataset, val_dataset):
         weight_decay=WEIGHT_DECAY,
         logging_steps=LOGGING_STEPS,
         logging_first_step=True,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=SAVE_TOTAL_LIMIT,
         load_best_model_at_end=True,

@@ -17,7 +17,7 @@ training:
   lr_scheduler: linear_warmup
 
 saving_logging:
-  output_dir: ./t5flan-checkpoints
+  output_dir: ./t5flan-base-results
   logging_steps: 50
   save_total_limit: 3
 

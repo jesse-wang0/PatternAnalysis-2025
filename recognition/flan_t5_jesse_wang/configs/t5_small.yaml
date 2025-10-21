@@ -16,7 +16,7 @@ training:
   num_epochs: 3
 
 saving_logging:
-  output_dir: ./t5flan-checkpoints
+  output_dir: ./t5flan-small-results
   logging_steps: 50
   save_total_limit: 3
 

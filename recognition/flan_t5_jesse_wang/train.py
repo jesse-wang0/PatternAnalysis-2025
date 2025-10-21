@@ -1,43 +1,29 @@
-import torch
-import pandas as pd
-from torch import amp
-from transformers import Seq2SeqTrainingArguments, Seq2SeqTrainer
-import matplotlib.pyplot as plt
 from pathlib import Path
+import yaml
+import torch
+from torch import amp
+import pandas as pd
+from peft import LoraConfig, get_peft_model
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from dataset import load_bio_lay_summ_data
 from modules import PretrainedT5
+from training_history import plot_training_history
 
-# --------------------------
-# HYPERPARAMETERS
-# --------------------------
-MODEL_NAME = "google/flan-t5-small"
+CONFIG_PATH = Path("configs")
 
-# Data
-BATCH_SIZE = 8
-EVAL_BATCH_SIZE = 4
-TRAIN_SPLIT_RATIO = 0.8
-MAX_INPUT_LENGTH = 512
-MAX_OUTPUT_LENGTH = 128
-SEED = 0
-MAX_GRAD_NORM = 1.0
+def load_config(config_name):
+    config_path = CONFIG_PATH / config_name
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
 
-# Training
-L_RATE = 5e-5
-WEIGHT_DECAY = 0.01
-NUM_EPOCHS = 3
-
-# Saving & Logging
-OUTPUT_DIR = "./t5flan-checkpoints"
-LOGGING_STEPS = 50
-SAVE_TOTAL_LIMIT = 3
-
-# Generation (for evaluation)
-GENERATION_MAX_LENGTH = MAX_OUTPUT_LENGTH  # Must match preprocessing
-GENERATION_NUM_BEAMS = 4
+    with config_path.open("r") as file:
+        config = yaml.safe_load(file)
+    return config
 
 def main():
+    config = load_config("t5_small.yaml")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
 
@@ -45,179 +31,176 @@ def main():
     results_folder.mkdir(parents=True, exist_ok=True)
 
     data = load_bio_lay_summ_data(
-        AutoTokenizer.from_pretrained(MODEL_NAME),
-        batch_size=BATCH_SIZE,
-        eval_batch_size=EVAL_BATCH_SIZE,
-        train_split_ratio=TRAIN_SPLIT_RATIO,
-        max_input_length=MAX_INPUT_LENGTH,
-        max_output_length=MAX_OUTPUT_LENGTH,
-        seed=SEED
+        AutoTokenizer.from_pretrained(config["model"]["name"]),
+        batch_size=config["data"]["batch_size"],
+        eval_batch_size=config["data"]["eval_batch_size"],
+        train_split_ratio=config["data"]["train_split_ratio"],
+        max_input_length=config["data"]["max_input_length"],
+        max_output_length=config["data"]["max_output_length"],
+        seed=config["data"]["seed"]
     )
     train_loader = data["loaders"]["train"]
     val_loader = data["loaders"]["val"]
 
-    train_dataset = data["datasets"]["train"]
-    val_dataset = data["datasets"]["val"]
-
-    model = PretrainedT5(MODEL_NAME).to(device)
-
     # No manual criterion - handled by huggingface T5ForConditionalGeneration
-
-    optimiser = torch.optim.AdamW(
+    model = PretrainedT5(config["model"]["name"]).to(device)
+    print(model)
+    optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=L_RATE,
-        weight_decay=WEIGHT_DECAY
+        lr=float(config["training"]["learning_rate"]),
+        weight_decay=float(config["training"]["weight_decay"])
     )
+    
+    train_t5_flan(device, config, model, optimizer, train_loader, val_loader)
 
-    # train_t5_flan(device, model, optimiser, train_loader, val_loader)
-    trainer_obj = train_with_trainer(model, train_dataset, val_dataset)
-
-    logs = []
-    for log in trainer_obj.state.log_history:
-        logs.append({
-            'epoch': log.get('epoch'),
-            'step': log.get('step'),
-            'train_loss': log.get('loss'),
-            'eval_loss': log.get('eval_loss'),
-            'learning_rate': log.get('learning_rate')
-        })
-
-    df = pd.DataFrame(logs)
-    df.to_csv(results_folder / "training_history.csv", index=False)
-    print("Training history saved to training_history.csv")
-
-    # Extract data with proper step alignment
-    train_data = df[df['train_loss'].notna()].copy()
-    eval_data = df[df['eval_loss'].notna()].copy()
-
-    # Plot with correct x-axis (steps)
-    plt.figure(figsize=(12, 6))
-    plt.plot(train_data['step'], train_data['train_loss'], 
-            label='Train Loss', alpha=0.7, linewidth=1)
-    plt.plot(eval_data['step'], eval_data['eval_loss'], 
-            label='Eval Loss', marker='o', markersize=10, 
-            linewidth=2, color='orange')
-
-    plt.xlabel('Training Steps')
-    plt.ylabel('Loss')
-    plt.title('Training and Validation Loss')
-    plt.legend(fontsize=12)
-    plt.grid(True, alpha=0.3)
-
-    # Optional: Add epoch boundaries
-    for idx, step in enumerate(eval_data['step'].values):
-        plt.axvline(x=step, color='gray', linestyle='--', 
-                alpha=0.3, linewidth=1)
-        plt.text(step, plt.ylim()[1]*0.95, f'Epoch {idx+1}', 
-                rotation=0, ha='center', fontsize=9, alpha=0.7)
-
-    plt.tight_layout()
-    plt.savefig(results_folder / 'loss_curve.png', dpi=300, bbox_inches='tight')
-    plt.show()
-
-    print(f"Training points logged: {len(train_data)}")
-    print(f"Evaluation points: {len(eval_data)}")
-
-    # Save final model
-    trainer_obj.save_model(results_folder / "final_model")
-
-def train_with_trainer(model, train_dataset, val_dataset):
-    training_args = Seq2SeqTrainingArguments(
-        output_dir=OUTPUT_DIR,
-        per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=EVAL_BATCH_SIZE,
-        num_train_epochs=NUM_EPOCHS,
-        learning_rate=L_RATE,
-        weight_decay=WEIGHT_DECAY,
-        max_grad_norm=MAX_GRAD_NORM,
-        
-        # Logging
-        logging_dir="./logs",
-        logging_steps=LOGGING_STEPS,
-        logging_first_step=True,
-        
-        # Evaluation & Saving
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        save_total_limit=SAVE_TOTAL_LIMIT,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        
-        # Generation (for seq2seq)
-        predict_with_generate=True,
-        generation_max_length=GENERATION_MAX_LENGTH,
-        generation_num_beams=GENERATION_NUM_BEAMS,
-        
-        # Performance
-        fp16 = False,
-        bf16 = True,
-        report_to="tensorboard"  # ← Enable TensorBoard
-    )
-
-    trainer = Seq2SeqTrainer(
-        model=model.model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
-        tokenizer=model.tokenizer,
-    )
-
-    trainer.train()
-    return trainer
-
-def train_t5_flan(device, model, optimiser, train_loader, val_loader):
+def train_t5_flan(device, config, model, optimizer, train_loader, val_loader):
+    OUTPUT_PATH = Path(config["saving_logging"]["output_dir"])
+    NUM_EPOCHS = config["training"]["num_epochs"]
     print(f"Starting training using {NUM_EPOCHS} epochs")
 
+    # Tracking for best model
+    best_eval_loss = float('inf')
+    saved_checkpoints = []
+    training_history = []
+    total_steps = 0
+
     for epoch in range(NUM_EPOCHS):
+        # --- Training Phase ---
         model.train()
         running_loss = 0.0
-
-        for batch in train_loader:
+        
+        # Wrap train_loader with tqdm
+        train_progress = tqdm(train_loader, desc=f"Epoch {epoch+1}/{NUM_EPOCHS} [Train]")
+        
+        for step, batch in enumerate(train_progress):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
-
-            optimiser.zero_grad()
-
-            with amp.autocast(device_type="cuda", dtype=torch.float16):
+            
+            optimizer.zero_grad()
+            
+            # Mixed precision training with bf16
+            with amp.autocast(device_type="cuda", dtype=torch.bfloat16):
                 outputs = model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     labels=labels
                 )
                 loss = outputs.loss
-
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
+            
+            # Backward pass
+            loss.backward()
+            
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=config["data"]["max_grad_norm"])
+            optimizer.step()
+            
             running_loss += loss.item()
-         
+            total_steps += 1
+            
+            # Update tqdm with current loss
+            train_progress.set_postfix({
+                'loss': f'{loss.item():.4f}',
+                'avg_loss': f'{running_loss/(step+1):.4f}'
+            })
+            
+            # Log to training history
+            if total_steps % config["saving_logging"]["logging_steps"] == 0 or (epoch == 0 and step == 0):
+                training_history.append({
+                    'epoch': epoch + (step + 1) / len(train_loader),
+                    'step': total_steps,
+                    'train_loss': loss.item(),
+                    'eval_loss': None,
+                    'learning_rate': optimizer.param_groups[0]['lr']
+                })
+        
         avg_train_loss = running_loss / len(train_loader)
         print(f'Epoch [{epoch+1}/{NUM_EPOCHS}], Training Loss: {avg_train_loss:.4f}')
 
         # --- Validation Phase ---
         model.eval()
         validation_loss = 0.0
+        
+        val_progress = tqdm(val_loader, desc=f"Epoch {epoch+1}/{NUM_EPOCHS} [Val]")
 
         with torch.no_grad():
-            for batch in val_loader:
+            for batch in val_progress:
                 input_ids = batch["input_ids"].to(device)
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["labels"].to(device)
-
-                # Forward pass (loss computed automatically)
-                outputs = model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    labels=labels
-                )
-                loss = outputs.loss
-
+                
+                with amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    outputs = model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels
+                    )
+                    loss = outputs.loss
+                
                 validation_loss += loss.item()
-
+                
+                # Update validation progress bar
+                val_progress.set_postfix({'val_loss': f'{loss.item():.4f}'})
+        
         avg_val_loss = validation_loss / len(val_loader)
         print(f'Epoch [{epoch+1}/{NUM_EPOCHS}], Validation Loss: {avg_val_loss:.4f}')
+        
+        training_history.append({
+            'epoch': epoch + 1,
+            'step': total_steps,
+            'train_loss': None,
+            'eval_loss': avg_val_loss,
+            'learning_rate': optimizer.param_groups[0]['lr']
+        })
+
+        # --- Save Checkpoint ---
+        checkpoint_path = OUTPUT_PATH / f"checkpoint-epoch-{epoch+1}"
+        Path(checkpoint_path).mkdir(parents=True, exist_ok=True)
+        
+        # Save model and optimizer state
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_loss': avg_train_loss,
+            'eval_loss': avg_val_loss,
+        }, checkpoint_path / "pytorch_model.bin")
+        
+        # Also save tokenizer if available
+        if hasattr(model, 'tokenizer'):
+            model.tokenizer.save_pretrained(checkpoint_path)
+        
+        saved_checkpoints.append((checkpoint_path, avg_val_loss))
+
+        if avg_val_loss < best_eval_loss:
+            best_eval_loss = avg_val_loss
+            best_checkpoint_path = OUTPUT_PATH / "best_model"
+            Path(best_checkpoint_path).mkdir(parents=True, exist_ok=True)
+            
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_loss': avg_train_loss,
+                'eval_loss': avg_val_loss,
+            }, best_checkpoint_path / "pytorch_model.bin")
+            
+            if hasattr(model, 'tokenizer'):
+                model.tokenizer.save_pretrained(best_checkpoint_path)
+            
+            print(f"New best model saved with eval_loss: {best_eval_loss:.4f}")
 
     print("Training and Validation Done!")
+    
+    # Save training history to CSV
+    df = pd.DataFrame(training_history)
+    df.to_csv(OUTPUT_PATH / "training_history.csv", index=False)
+    print("Training history saved to training_history.csv")
+    
+    # Plot training curves
+    plot_training_history(OUTPUT_PATH / "training_history.csv", OUTPUT_PATH)
+    
+    return model
 
 if __name__ == "__main__":
     main()

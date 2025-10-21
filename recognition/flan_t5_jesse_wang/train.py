@@ -1,9 +1,13 @@
 import torch
+import pandas as pd
 from torch import amp
 from transformers import Seq2SeqTrainingArguments, Seq2SeqTrainer
+import matplotlib.pyplot as plt
+from pathlib import Path
+from transformers import AutoTokenizer
 
 from dataset import load_bio_lay_summ_data
-from modules import BioLaySummT5Flan
+from modules import PretrainedT5
 
 # --------------------------
 # HYPERPARAMETERS
@@ -17,11 +21,12 @@ TRAIN_SPLIT_RATIO = 0.8
 MAX_INPUT_LENGTH = 512
 MAX_OUTPUT_LENGTH = 128
 SEED = 0
+MAX_GRAD_NORM = 1.0
 
 # Training
-L_RATE = 3e-4
+L_RATE = 5e-5
 WEIGHT_DECAY = 0.01
-NUM_EPOCHS = 2
+NUM_EPOCHS = 3
 
 # Saving & Logging
 OUTPUT_DIR = "./t5flan-checkpoints"
@@ -36,8 +41,11 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
 
+    results_folder = Path("./results")
+    results_folder.mkdir(parents=True, exist_ok=True)
+
     data = load_bio_lay_summ_data(
-        MODEL_NAME,
+        AutoTokenizer.from_pretrained(MODEL_NAME),
         batch_size=BATCH_SIZE,
         eval_batch_size=EVAL_BATCH_SIZE,
         train_split_ratio=TRAIN_SPLIT_RATIO,
@@ -51,7 +59,7 @@ def main():
     train_dataset = data["datasets"]["train"]
     val_dataset = data["datasets"]["val"]
 
-    model = BioLaySummT5Flan().to(device)
+    model = PretrainedT5(MODEL_NAME).to(device)
 
     # No manual criterion - handled by huggingface T5ForConditionalGeneration
 
@@ -63,8 +71,55 @@ def main():
 
     # train_t5_flan(device, model, optimiser, train_loader, val_loader)
     trainer_obj = train_with_trainer(model, train_dataset, val_dataset)
+
+    logs = []
+    for log in trainer_obj.state.log_history:
+        logs.append({
+            'epoch': log.get('epoch'),
+            'step': log.get('step'),
+            'train_loss': log.get('loss'),
+            'eval_loss': log.get('eval_loss'),
+            'learning_rate': log.get('learning_rate')
+        })
+
+    df = pd.DataFrame(logs)
+    df.to_csv(results_folder / "training_history.csv", index=False)
+    print("Training history saved to training_history.csv")
+
+    # Extract data with proper step alignment
+    train_data = df[df['train_loss'].notna()].copy()
+    eval_data = df[df['eval_loss'].notna()].copy()
+
+    # Plot with correct x-axis (steps)
+    plt.figure(figsize=(12, 6))
+    plt.plot(train_data['step'], train_data['train_loss'], 
+            label='Train Loss', alpha=0.7, linewidth=1)
+    plt.plot(eval_data['step'], eval_data['eval_loss'], 
+            label='Eval Loss', marker='o', markersize=10, 
+            linewidth=2, color='orange')
+
+    plt.xlabel('Training Steps')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss')
+    plt.legend(fontsize=12)
+    plt.grid(True, alpha=0.3)
+
+    # Optional: Add epoch boundaries
+    for idx, step in enumerate(eval_data['step'].values):
+        plt.axvline(x=step, color='gray', linestyle='--', 
+                alpha=0.3, linewidth=1)
+        plt.text(step, plt.ylim()[1]*0.95, f'Epoch {idx+1}', 
+                rotation=0, ha='center', fontsize=9, alpha=0.7)
+
+    plt.tight_layout()
+    plt.savefig(results_folder / 'loss_curve.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+    print(f"Training points logged: {len(train_data)}")
+    print(f"Evaluation points: {len(eval_data)}")
+
     # Save final model
-    trainer_obj.save_model("./final_model")
+    trainer_obj.save_model(results_folder / "final_model")
 
 def train_with_trainer(model, train_dataset, val_dataset):
     training_args = Seq2SeqTrainingArguments(
@@ -74,35 +129,44 @@ def train_with_trainer(model, train_dataset, val_dataset):
         num_train_epochs=NUM_EPOCHS,
         learning_rate=L_RATE,
         weight_decay=WEIGHT_DECAY,
+        max_grad_norm=MAX_GRAD_NORM,
+        
+        # Logging
+        logging_dir="./logs",
         logging_steps=LOGGING_STEPS,
         logging_first_step=True,
+        
+        # Evaluation & Saving
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=SAVE_TOTAL_LIMIT,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
+        
+        # Generation (for seq2seq)
         predict_with_generate=True,
         generation_max_length=GENERATION_MAX_LENGTH,
         generation_num_beams=GENERATION_NUM_BEAMS,
-        fp16=True,
-        report_to="none"
+        
+        # Performance
+        fp16 = False,
+        bf16 = True,
+        report_to="tensorboard"  # ← Enable TensorBoard
     )
-    
+
     trainer = Seq2SeqTrainer(
-        model=model.model,  # use inner model
+        model=model.model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         tokenizer=model.tokenizer,
     )
-    
+
     trainer.train()
     return trainer
 
 def train_t5_flan(device, model, optimiser, train_loader, val_loader):
     print(f"Starting training using {NUM_EPOCHS} epochs")
-
-    scaler = amp.GradScaler(device_type=device)
 
     for epoch in range(NUM_EPOCHS):
         model.train()
@@ -123,10 +187,7 @@ def train_t5_flan(device, model, optimiser, train_loader, val_loader):
                 )
                 loss = outputs.loss
 
-            scaler.scale(loss).backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            scaler.step(optimiser)
-            scaler.update()
 
             running_loss += loss.item()
          

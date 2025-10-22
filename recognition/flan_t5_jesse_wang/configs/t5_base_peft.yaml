@@ -17,7 +17,7 @@ data:
   seed: 0
 
 training:
-  learning_rate: 1e-3
+  learning_rate: 3e-3
   weight_decay: 0.01
   num_epochs: 5
   lr_scheduler: cosine_with_warmup

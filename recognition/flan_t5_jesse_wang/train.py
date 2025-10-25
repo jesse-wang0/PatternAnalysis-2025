@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import yaml
 import torch
@@ -6,6 +7,10 @@ import pandas as pd
 from peft import LoraConfig, get_peft_model
 from tqdm import tqdm
 from transformers import AutoTokenizer
+from typing import Dict, Any, Optional
+from torch.utils.data import DataLoader
+from torch.optim import Optimizer
+from torch import nn
 
 from dataset import load_bio_lay_summ_data
 from modules import PretrainedT5
@@ -13,7 +18,9 @@ from training_history import plot_training_history
 
 CONFIG_PATH = Path("configs")
 
-def load_config(config_name):
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+def load_config(config_name: str):
     config_path = CONFIG_PATH / config_name
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -23,12 +30,11 @@ def load_config(config_name):
     return config
 
 def main():
-    config = load_config("t5_small.yaml")
+    # config = load_config("t5_small.yaml")
+    # config = load_config("t5_base.yaml")
+    config = load_config("t5_base_peft.yaml")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
-
-    results_folder = Path("./results")
-    results_folder.mkdir(parents=True, exist_ok=True)
 
     data = load_bio_lay_summ_data(
         AutoTokenizer.from_pretrained(config["model"]["name"]),
@@ -37,7 +43,7 @@ def main():
         train_split_ratio=config["data"]["train_split_ratio"],
         max_input_length=config["data"]["max_input_length"],
         max_output_length=config["data"]["max_output_length"],
-        seed=config["data"]["seed"]
+        seed=config["data"]["seed"],
     )
     train_loader = data["loaders"]["train"]
     val_loader = data["loaders"]["val"]
@@ -45,22 +51,42 @@ def main():
     # No manual criterion - handled by huggingface T5ForConditionalGeneration
     model = PretrainedT5(config["model"]["name"]).to(device)
     print(model)
+
+    lora_params = config.get("lora", None)
+
+    if lora_params:
+        peft_config = LoraConfig(
+            r=lora_params["r"],
+            lora_alpha=lora_params["alpha"],
+            target_modules=lora_params["target_modules"],
+            lora_dropout=lora_params["dropout"]
+        )
+        model = get_peft_model(model.model, peft_config)
+
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(config["training"]["learning_rate"]),
         weight_decay=float(config["training"]["weight_decay"])
-    )
-    
-    train_t5_flan(device, config, model, optimizer, train_loader, val_loader)
+    )   
+    train_t5_flan(device, config, model, optimizer, train_loader, val_loader, lora_params)
 
-def train_t5_flan(device, config, model, optimizer, train_loader, val_loader):
+def train_t5_flan(
+    device: torch.device,
+    config: Dict[str, Any],
+    model: nn.Module,
+    optimizer: Optimizer,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    lora_params: Optional[Dict[str, Any]] = None
+) -> nn.Module:
     OUTPUT_PATH = Path(config["saving_logging"]["output_dir"])
+    OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+
     NUM_EPOCHS = config["training"]["num_epochs"]
     print(f"Starting training using {NUM_EPOCHS} epochs")
 
     # Tracking for best model
     best_eval_loss = float('inf')
-    saved_checkpoints = []
     training_history = []
     total_steps = 0
 
@@ -154,30 +180,14 @@ def train_t5_flan(device, config, model, optimizer, train_loader, val_loader):
         })
 
         # --- Save Checkpoint ---
-        checkpoint_path = OUTPUT_PATH / f"checkpoint-epoch-{epoch+1}"
-        Path(checkpoint_path).mkdir(parents=True, exist_ok=True)
-        
-        # Save model and optimizer state
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'train_loss': avg_train_loss,
-            'eval_loss': avg_val_loss,
-        }, checkpoint_path / "pytorch_model.bin")
-        
-        # Also save tokenizer if available
-        if hasattr(model, 'tokenizer'):
-            model.tokenizer.save_pretrained(checkpoint_path)
-        
-        saved_checkpoints.append((checkpoint_path, avg_val_loss))
-
         if avg_val_loss < best_eval_loss:
             best_eval_loss = avg_val_loss
             best_checkpoint_path = OUTPUT_PATH / "best_model"
             Path(best_checkpoint_path).mkdir(parents=True, exist_ok=True)
             
             torch.save({
+                'base_model_name': config["model"]["name"],
+                'lora_params': lora_params,
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),

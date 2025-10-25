@@ -5,9 +5,10 @@ import json
 import torch
 import random
 import evaluate
+from tqdm import tqdm
 
 from dataset import load_bio_lay_summ_data
-from modules import BioLaySummT5Flan, PretrainedT5, FineTunedT5
+from modules import PretrainedT5, FineTunedT5, FineTunedT5LoRA
 
 NUM_SAMPLES = 10
 RESULT_FOLDER = Path("./results")
@@ -17,21 +18,24 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
 
-    pre_trained_small = PretrainedT5(model_name="google/flan-t5-small")
-    pre_trained_base = PretrainedT5(model_name="google/flan-t5-base")
-    tuned_small = FineTunedT5(model_name="finetuned_flan-t5-small", model_path="./results/final_model")
-    models = [pre_trained_small, pre_trained_base, tuned_small]
+    pre_trained_small = PretrainedT5(model_name="google/flan-t5-small").to(device)
+    pre_trained_base = PretrainedT5(model_name="google/flan-t5-base").to(device)
+    tuned_base = FineTunedT5(model_path="./pytorch_model.bin").to(device)
+    tuned_lora = FineTunedT5LoRA(model_path="./t5flan-base-lora-results/best_model/pytorch_model.bin").to(device)
+    models = [pre_trained_base]
 
     data = load_bio_lay_summ_data(
         models[0].tokenizer,  # all t5_flan models use same tokenizer
         batch_size=8,
-        eval_batch_size=4
+        eval_batch_size=16
     )
     test_loader = data["loaders"]["test"]
 
+    rouge = evaluate.load("rouge")
+
     all_result_metrics = {}
     for model in models:
-        model_metrics = test_t5_flan(device, model, test_loader)
+        model_metrics = test_t5_flan(device, model, rouge, test_loader)
         all_result_metrics.update(model_metrics)  # merge dict keyed by model_name
 
     graph_rouges(all_result_metrics)
@@ -39,52 +43,50 @@ def main():
 def test_t5_flan(
     device: torch.device, 
     model,
+    rouge,
     test_loader,
 ):
+    model_name = model.model_name
+    if model.fine_tuned:
+        if model.lora:
+            model_name += "_lora"
+        else:
+            model_name += "_tuned"
+            
     print("=" * 80)
-    print(f"Evaluating Model: {model.model_name}")
+    print(f"Evaluating Model: {model_name}")
     print("=" * 80)
-
-    model = model.to(device)
 
     model.eval()
-    test_loss = 0.0
     all_inputs = []
     all_ground_truths = []
     all_predictions = []
 
-    # --- Compute average loss ---
-    with torch.no_grad():
-        for batch in test_loader:
+    with torch.inference_mode():
+        for batch in tqdm(test_loader, desc=f"Evaluating {model_name}", leave=False):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
 
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            test_loss += outputs.loss.item()
-
-            # For generating samples later
             all_inputs.extend(model.tokenizer.batch_decode(input_ids, skip_special_tokens=True))
-            
-            # Replace -100 with pad_token_id before decoding
+
             labels_for_decode = labels.clone()
             labels_for_decode[labels_for_decode == -100] = model.tokenizer.pad_token_id
             all_ground_truths.extend(
                 model.tokenizer.batch_decode(labels_for_decode, skip_special_tokens=True)
             )
 
-            # Generate predictions
             generated_ids = model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                max_length=128
+                max_length=128,
+                do_sample=False,
+                num_beams=1,
+                use_cache=True
             )
             all_predictions.extend(
                 model.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             )
-
-    avg_test_loss = test_loss / len(test_loader)
-    print(f"\nAverage Test Loss: {avg_test_loss:.4f}\n")
 
     # --- Generate sample summaries ---
     random.seed(0)
@@ -95,7 +97,6 @@ def test_t5_flan(
     generated_texts = [all_predictions[i] for i in sample_indices]
 
     # Calculate rogue scores for the current model
-    rouge = evaluate.load("rouge")
     results = rouge.compute(
         predictions=all_predictions,
         references=all_ground_truths,
@@ -103,7 +104,7 @@ def test_t5_flan(
     )
 
     rouge_scores = {}
-    print(f"\n=== ROUGE Scores for {model.model_name} ===")
+    print(f"\n=== ROUGE Scores for {model_name} ===")
     for metric, value in results.items():
         print(f"{metric}: {value:.4f}")
         rouge_scores[metric] = round(value, 4)
@@ -119,15 +120,14 @@ def test_t5_flan(
         })
 
     result_metrics = {
-        model.model_name: {
-            "average_test_loss": round(avg_test_loss, 4),
+        model_name: {
             "rouge_scores": rouge_scores,
             "examples": generated_examples
         }
     }
 
     # Save as example results as JSON file
-    output_path = RESULT_FOLDER / f"{model.model_name.replace('/', '_')}_generations.json"
+    output_path = RESULT_FOLDER / f"{model_name.replace('/', '_')}_generations.json"
     with open(output_path, "w", encoding="utf-8") as f:
         print(f"Saving result metrics to {output_path}")
         json.dump(result_metrics, f, indent=4, ensure_ascii=False)

@@ -19,7 +19,7 @@ data:
 training:
   learning_rate: 3e-3
   weight_decay: 0.01
-  num_epochs: 5
+  num_epochs: 3
   lr_scheduler: cosine_with_warmup
   warmup_steps: 500
   gradient_accumulation_steps: 2

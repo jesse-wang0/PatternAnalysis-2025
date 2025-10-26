@@ -20,16 +20,16 @@ def main():
 
     pre_trained_small = PretrainedT5(model_name="google/flan-t5-small").to(device)
     pre_trained_base = PretrainedT5(model_name="google/flan-t5-base").to(device)
-    tuned_base = FineTunedT5(model_path="./pytorch_model.bin").to(device)
+    tuned_small = FineTunedT5(model_path="./t5flan-small-results/best_model/pytorch_model.bin").to(device)
+    tuned_base = FineTunedT5(model_path="./t5flan-base-results/best_model/pytorch_model.bin").to(device)
     tuned_lora = FineTunedT5LoRA(model_path="./t5flan-base-lora-results/best_model/pytorch_model.bin").to(device)
-    models = [pre_trained_base]
+    models = [pre_trained_small, pre_trained_base, tuned_small, tuned_base, tuned_lora]
 
-    data = load_bio_lay_summ_data(
+    _, _, test_loader = load_bio_lay_summ_data(
         models[0].tokenizer,  # all t5_flan models use same tokenizer
         batch_size=8,
         eval_batch_size=16
     )
-    test_loader = data["loaders"]["test"]
 
     rouge = evaluate.load("rouge")
 

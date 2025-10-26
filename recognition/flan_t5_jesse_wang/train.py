@@ -36,7 +36,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
 
-    data = load_bio_lay_summ_data(
+    train_loader, val_loader, _ = load_bio_lay_summ_data(
         AutoTokenizer.from_pretrained(config["model"]["name"]),
         batch_size=config["data"]["batch_size"],
         eval_batch_size=config["data"]["eval_batch_size"],
@@ -45,8 +45,6 @@ def main():
         max_output_length=config["data"]["max_output_length"],
         seed=config["data"]["seed"],
     )
-    train_loader = data["loaders"]["train"]
-    val_loader = data["loaders"]["val"]
 
     # No manual criterion - handled by huggingface T5ForConditionalGeneration
     model = PretrainedT5(config["model"]["name"]).to(device)

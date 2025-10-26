@@ -94,18 +94,8 @@ def load_bio_lay_summ_data(
         pin_memory=True,
         drop_last=False
     )
-    return {
-        "loaders": {
-            "train": train_loader,
-            "val": val_loader,
-            "test": test_loader
-        },
-        "datasets": {
-            "train": tokenized_train,
-            "val": tokenized_val,
-            "test": tokenized_test
-        }
-    }
+    
+    return train_loader, val_loader, test_loader
 
 def preprocess(
     batch: dict, 

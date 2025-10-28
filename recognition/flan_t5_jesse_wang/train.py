@@ -4,35 +4,23 @@ import yaml
 import torch
 from torch import amp
 import pandas as pd
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, PeftModel
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from typing import Dict, Any, Optional
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from torch import nn
+import sys
 
 from dataset import load_bio_lay_summ_data
 from modules import PretrainedT5
 from training_history import plot_training_history
 
-CONFIG_PATH = Path("configs")
-
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-def load_config(config_name: str):
-    config_path = CONFIG_PATH / config_name
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with config_path.open("r") as file:
-        config = yaml.safe_load(file)
-    return config
-
-def main():
-    # config = load_config("t5_small.yaml")
-    # config = load_config("t5_base.yaml")
-    config = load_config("t5_base_peft.yaml")
+def main(config_path):
+    config = load_config(config_path)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
 
@@ -45,14 +33,13 @@ def main():
         max_output_length=config["data"]["max_output_length"],
         seed=config["data"]["seed"],
     )
-
+    
     print(f"Training model: {config["model"]["name"]}")
     # No manual criterion - handled by huggingface T5ForConditionalGeneration
     model = PretrainedT5(config["model"]["name"]).to(device)
     print(model)
 
     lora_params = config.get("lora", None)
-
     if lora_params:
         peft_config = LoraConfig(
             r=lora_params["r"],
@@ -61,6 +48,8 @@ def main():
             lora_dropout=lora_params["dropout"]
         )
         model = get_peft_model(model.model, peft_config)
+
+    print_parameter_count(model)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -224,5 +213,35 @@ def train_t5_flan(
     
     return model
 
+def load_config(config_path: str):
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with config_path.open("r") as file:
+        config = yaml.safe_load(file)
+    return config
+
+def print_parameter_count(model):
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    trainable_fraction = (trainable_params / total_params) * 100
+    print(f"\n=== Model Parameter Summary ===")
+    print(f"Total parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
+    print(f"Trainable fraction: {trainable_fraction:.2f}%")
+
+    # If LoRA model, report LoRA-only params
+    if isinstance(model, PeftModel):
+        lora_params = get_peft_model_state_dict(model)
+        lora_param_count = sum(p.numel() for p in lora_params.values())
+        print(f"LoRA parameters: {lora_param_count:,} "
+              f"({100 * lora_param_count / total_params:.4f}% of total)")
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 3 and sys.argv[1] == "--config":
+        model_config_path = Path(sys.argv[2])
+        main(model_config_path)
+        sys.exit(0)
+    else:
+        print("Usage: python train.py --config <path_to_config.yaml>")
+        sys.exit(1)

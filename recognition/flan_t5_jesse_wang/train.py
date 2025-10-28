@@ -46,6 +46,7 @@ def main():
         seed=config["data"]["seed"],
     )
 
+    print(f"Training model: {config["model"]["name"]}")
     # No manual criterion - handled by huggingface T5ForConditionalGeneration
     model = PretrainedT5(config["model"]["name"]).to(device)
     print(model)
@@ -91,7 +92,9 @@ def train_t5_flan(
     for epoch in range(NUM_EPOCHS):
         # --- Training Phase ---
         model.train()
-        running_loss = 0.0
+        running_loss = 0.0        # for the whole epoch
+        interval_loss = 0.0       # for logging averages
+        interval_count = 0        # number of batches in current interval
         
         # Wrap train_loader with tqdm
         train_progress = tqdm(train_loader, desc=f"Epoch {epoch+1}/{NUM_EPOCHS} [Train]")
@@ -120,6 +123,8 @@ def train_t5_flan(
             optimizer.step()
             
             running_loss += loss.item()
+            interval_loss += loss.item()
+            interval_count += 1
             total_steps += 1
             
             # Update tqdm with current loss
@@ -130,13 +135,16 @@ def train_t5_flan(
             
             # Log to training history
             if total_steps % config["saving_logging"]["logging_steps"] == 0 or (epoch == 0 and step == 0):
+                avg_interval_loss = interval_loss / interval_count
                 training_history.append({
                     'epoch': epoch + (step + 1) / len(train_loader),
                     'step': total_steps,
-                    'train_loss': loss.item(),
+                    'train_loss': avg_interval_loss,
                     'eval_loss': None,
                     'learning_rate': optimizer.param_groups[0]['lr']
                 })
+                interval_loss = 0.0
+                interval_count = 0
         
         avg_train_loss = running_loss / len(train_loader)
         print(f'Epoch [{epoch+1}/{NUM_EPOCHS}], Training Loss: {avg_train_loss:.4f}')
@@ -172,7 +180,7 @@ def train_t5_flan(
         training_history.append({
             'epoch': epoch + 1,
             'step': total_steps,
-            'train_loss': None,
+            'train_loss': avg_train_loss,
             'eval_loss': avg_val_loss,
             'learning_rate': optimizer.param_groups[0]['lr']
         })
@@ -199,6 +207,12 @@ def train_t5_flan(
             print(f"New best model saved with eval_loss: {best_eval_loss:.4f}")
 
     print("Training and Validation Done!")
+    
+    # Log peak GPU memory usage
+    peak_memory_gb = torch.cuda.max_memory_allocated(device) / 1024**3
+    print(f"\n{'='*80}")
+    print(f"Peak GPU Memory Usage: {peak_memory_gb:.2f} GB")
+    print(f"{'='*80}\n")
     
     # Save training history to CSV
     df = pd.DataFrame(training_history)

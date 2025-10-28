@@ -1,0 +1,72 @@
+{
+    "google/flan-t5-base_lora": {
+        "rouge_scores": {
+            "rouge1": 0.7238,
+            "rouge2": 0.5477,
+            "rougeL": 0.6774,
+            "rougeLsum": 0.6771
+        },
+        "examples": [
+            {
+                "Sample": 1,
+                "Original Report": "Provide a layman's interpretation of this medical report: Bony discontinuity in the posterior arch of the 8th left rib, suggestive of a non-displaced fracture. A small rib fissure fracture may go unnoticed due to the patient's characteristics. No evidence of pneumothorax.",
+                "Reference Summary": "There is a break in the back part of the 8th rib on the left side, which looks like it hasn't moved out of place. A small crack in the rib might not be noticed because of how the patient is built. There's no sign of air in the space around the lungs.",
+                "Predicted Summary": "There is a break in the back part of the 8th rib on the left side, which could be a non-displaced fracture. A small fracture in the rib fissure might not be noticed because of the patient's characteristics. There is no sign of air in the space between the lungs and the chest wall."
+            },
+            {
+                "Sample": 2,
+                "Original Report": "Provide a layman's interpretation of this medical report: Reason for consultation: ovarian carcinoma with subocclusive symptoms and peritoneal progression. Follow-up. Posteroanterior chest radiograph: no significant findings. Simple abdominal radiograph: nonspecific luminal pattern. No current signs of obstruction.",
+                "Reference Summary": "The patient came in because of ovarian cancer with symptoms that suggest the disease might be blocking something inside the body and spreading in the abdominal lining. This is a follow-up appointment. The chest x-ray shows nothing important. The abdominal x-ray shows a pattern that doesn't give a clear diagnosis. There are no signs right now that something is blocked.",
+                "Predicted Summary": "The patient came in because they have ovarian cancer that causes symptoms that are not related to the skin and the growth of the uterus. This is a follow-up check. The chest x-ray taken from the front shows no major issues. The simple abdominal x-ray shows a nonspecific pattern that could indicate fluid or other issues. There are no current signs of obstruction."
+            },
+            {
+                "Sample": 3,
+                "Original Report": "Provide a layman's interpretation of this medical report: Increased bilateral bronchovascular markings suggest interstitial involvement, with no changes compared to the previous X-ray from 2014.",
+                "Reference Summary": "The chest x-ray shows more markings around the airways and blood vessels in both lungs, indicating that there might be some involvement of the lung tissue. This is the same as what was seen in the x-ray taken in 2014.",
+                "Predicted Summary": "The x-ray shows more visible blood vessels and airways in both lungs, which suggests that the lung tissue is affected. This is the same as what was seen in the x-ray from 2014."
+            },
+            {
+                "Sample": 4,
+                "Original Report": "Provide a layman's interpretation of this medical report: No relevant abnormalities.",
+                "Reference Summary": "There are no significant issues or abnormalities found.",
+                "Predicted Summary": "There are no significant issues found."
+            },
+            {
+                "Sample": 5,
+                "Original Report": "Provide a layman's interpretation of this medical report: Bilateral interstitial pattern. Cardiomegaly. Pulmonary parenchyma without consolidation foci. No pleural effusion is observed.",
+                "Reference Summary": "There is a pattern showing fluid in both lungs. The heart is enlarged. The lung tissue doesn't have any solid areas. No fluid is seen around the lungs.",
+                "Predicted Summary": "Both sides of the lungs show a pattern that suggests fluid or inflammation in the lung tissue. The heart is enlarged. The lung tissue appears normal without any areas of solidified lung tissue. There is no fluid buildup around the lungs."
+            },
+            {
+                "Sample": 6,
+                "Original Report": "Provide a layman's interpretation of this medical report: The lungs and pleural spaces show no acute abnormality. Heart size and pulmonary vascularity within normal limits. 1. No acute pulmonary abnormality.",
+                "Reference Summary": "The lungs and the spaces around them appear normal. The size of the heart and the blood vessels in the lungs are within the expected range. 1. There are no sudden issues in the lungs.",
+                "Predicted Summary": "The lungs and the spaces around them look normal. The heart size and the blood vessels in the lungs are within the normal range. 1. There are no sudden lung issues."
+            },
+            {
+                "Sample": 7,
+                "Original Report": "Provide a layman's interpretation of this medical report: No significant findings.",
+                "Reference Summary": "There are no important issues to report.",
+                "Predicted Summary": "There are no important issues found."
+            },
+            {
+                "Sample": 8,
+                "Original Report": "Provide a layman's interpretation of this medical report: Bilateral consolidations affecting both lower lobes, left more than right. Mild cardiomegaly. Minimal pleural effusion in the posterior costophrenic angle.",
+                "Reference Summary": "Both lower parts of the lungs have areas of solid tissue, with the left side being more affected than the right. The heart is slightly larger than normal. There is a small amount of fluid near the back of the lungs, where the chest wall meets the diaphragm.",
+                "Predicted Summary": "Both lower parts of the lungs have areas of solidified lung tissue, more on the left side than the right. The heart is slightly larger than normal. There is a small amount of fluid around the lungs at the back of the chest."
+            },
+            {
+                "Sample": 9,
+                "Original Report": "Provide a layman's interpretation of this medical report: No pulmonary infiltrates or consolidations are observed. No pulmonary nodules are observed.",
+                "Reference Summary": "No signs of pneumonia or solid lumps in the lungs are seen. No lung nodules are detected.",
+                "Predicted Summary": "No signs of lung infections or solid areas in the lungs are seen. No lumps in the lungs are seen."
+            },
+            {
+                "Sample": 10,
+                "Original Report": "Provide a layman's interpretation of this medical report: Radiological improvement with resolution of left lower lobe infiltrate suggestive of pneumonia.",
+                "Reference Summary": "The X-ray shows that the lung issue in the lower left part has gotten better, suggesting that the pneumonia in that area has improved.",
+                "Predicted Summary": "The x-ray shows improvement, with the area of lung inflammation in the lower left part of the lung now cleared up."
+            }
+        ]
+    }
+}

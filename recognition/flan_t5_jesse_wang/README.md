@@ -6,9 +6,17 @@ Jesse Wang (48076306)
 
 This project fine-tunes pretrained FLAN-T5 models to translate expert radiology reports into layperson-friendly summaries.
 
-It evaluates fine-tuning both Small and Base variants of FLAN-T5 and LoRA (PEFT) on the Base model to optimize fine-tuning efficiency.
-
 **Problem solved**: Automates the generation of patient-friendly medical summaries from technical radiology reports, improving accessibility and understanding for non-expert readers.
+
+We evaluate fine-tuning the following model configurations:
+
+- **FLAN-T5 Small**
+- **FLAN-T5 Base** (with and without LoRA)
+
+After tuning, the goal is to identify the best model that optimizes both:
+
+- **Summary quality** (ROUGE scores and clarity)
+- **Training efficiency** (compute and memory requirements)
 
 ### How It Works
 
@@ -95,25 +103,27 @@ The following models were trained on the BioLaySumm dataset:
 - **FLAN-T5 Base** – fully trained for improved summary quality
 - **FLAN-T5 Base + LoRA** – parameter-efficient training using Low-Rank Adaptation (LoRA)
 
-The LoRA variant was included to compare performance and training efficiency against full fine-tuning approaches.
+This approach allows us to systematically compare the three models and identify the configuration that offers the best balance of performance and training efficiency.
 
 ## Tuning
 
-| Attribute                | **FLAN-T5 Small (Tuned)**  | **FLAN-T5 Base (Tuned)**   | **FLAN-T5 Base (LoRA)**                     |
-| ------------------------ | -------------------------- | -------------------------- | ------------------------------------------- |
-| **Total Parameters**     | 77,000,000                 | 248,000,000                | 248,000,000                                 |
-| **Trainable Parameters** | 77,000,000                 | 248,000,000                | 884,736                                     |
-| **Trainable Fraction**   | 100%                       | 100%                       | 0.36%                                       |
-| **Epochs**               | 3                          | 4                          | 4                                           |
-| **Training Time (hrs)**  | 1.2 (22 minutes per epoch) | 3.4 (24 minutes per epoch) | 1.8 (20.7 minutes faster per epoch vs base) |
-| **Batch Size**           | 8                          | 8                          | 8                                           |
-| **Learning Rate**        | 5e-5                       | 5e-5                       | 1e-4                                        |
+| Attribute                | **FLAN-T5 Small (Tuned)**   | **FLAN-T5 Base (Tuned)**    | **FLAN-T5 Base (LoRA)**        |
+| ------------------------ | --------------------------- | --------------------------- | ------------------------------ |
+| **Total Parameters**     | 76,961,152                  | 247,577,856                 | 247,577,856                    |
+| **Trainable Parameters** | 76,961,152                  | 247,577,856                 | 3,538,944                      |
+| **Trainable Fraction**   | 100%                        | 100%                        | 1.41%                          |
+| **Learning Rate**        | 5e-5                        | 2e-5                        | 3e-3                           |
+| **Epochs**               | 4                           | 4                           | 4                              |
+| **Training Time**        | 1.7 hrs (~22 minutes/epoch) | 3.4 hrs (~45 minutes/epoch) | 1.85 hrs (~24.5 minutes/epoch) |
+| **Batch Size**           | 8                           | 8                           | 16                             |
+
+4 epochs was used for all models, as research indicates that fine-tuning LLMs for too many epochs can increase hallucinations. Additionally, this number provides a consistent basis for comparison across models.
 
 > **Summary:**
 >
-> - The **FLAN-T5 Small (Tuned)** model provided a lightweight baseline for assessing scalability.
-> - The **FLAN-T5 Base (Tuned)** model achieved higher-quality summaries but required more compute.
-> - The **FLAN-T5 Base (LoRA)** configuration delivered a strong trade-off between performance, speed, and efficiency — fine-tuning only **0.36%** of parameters while maintaining comparable ROUGE scores.
+> - The **FLAN-T5 Small (Tuned)** model served as a lightweight reference point to evaluate scalability improvements from larger models.
+> - The **FLAN-T5 Base (Tuned)** model achieved higher-quality summaries but required more computational resources.
+> - The **FLAN-T5 Base (LoRA)** configuration delivered a strong trade-off between performance, speed, and efficiency — fine-tuning only **1.41%** of parameters while maintaining comparable ROUGE scores.
 
 # Results
 
@@ -121,13 +131,13 @@ The LoRA variant was included to compare performance and training efficiency aga
 
 ![loss comparisons](results/loss_curve_comparison.png)
 
-For 4 epochs of training, all 3 models converge. The evaluation loss also is not incereasing, showing that there is no overfitting.
+For 4 epochs of training, all three models reached convergence. Evaluation loss did not increase, indicating no overfitting.
 
-Interesting thing is that the evaluation loss (from validation set) is lower than the training loss
+Interestingly, the evaluation loss on the validation set was slightly lower than the training loss, likely due to dropout and optimizer noise being disabled during evaluation.
 
 ## Evaluation Metric - ROUGE
 
-Evaluation was performed using the ROUGE family of metrics, standard for text summarization:
+Evaluation was performed using the ROUGE metric family.
 
 - **ROUGE-1**: Unigram overlap (measures content coverage).
 - **ROUGE-2**: Bigram overlap (evaluates fluency and phrase accuracy).
@@ -136,9 +146,30 @@ Evaluation was performed using the ROUGE family of metrics, standard for text su
 
 ![rouge comparisons](results/rouge_comparison.png)
 
-### Example Inference (using LoRA Base Tuned)
+From this graph, base is the best however, it takes too long to train. LoRA and small are around the same (LoRA slightly higher)
 
-More can be found in this [results file](results/base_lora_results.json)
+Inference Time:
+Small (Fine Tuned): 12:38 minutes
+Base + LoRA (Fine Tuned): 17:14 minutes
+Base (Fine Tuned): 23:19 minutes
+
+## Model Selection
+
+After evaluating both training efficiency and summary quality:
+
+- **FLAN-T5 Base (LoRA)** was selected as the best model:
+  - Maintains ROUGE scores comparable to the fully fine-tuned Base model.
+  - Fine-tunes only 1.41% of parameters → faster training, lower memory usage.
+  - Provides a strong balance between performance and resource requirements.
+
+> **Note:** Although the Small model achieves similar ROUGE scores and slightly faster inference, closer inspection shows it often retains technical jargon, making summaries less accessible to laypersons.
+> In contrast, Base+LoRA preserves most of the Base model’s translation capability while remaining parameter-efficient and fast, making it the preferred choice for patient-friendly summaries.
+
+This model is used for all example summaries and downstream analysis.
+
+## Example Inference
+
+> Using FLAN-T5 Base (LoRA). More can be found in this [results file](results/base_lora_results.json)
 
 **Example 1**: Short report, Short summary, Heavy jargon
 
@@ -182,12 +213,12 @@ Predicted Summary: "The patient came in because they have ovarian cancer that ca
 
 ## Result Analysis
 
-All three fine-tuned models accurately capture the key content of reports across a range of lengths and complexity. Produced summaries are of appropriate length, and do not introduce irrelevant or hallucinated information.
+The FLAN-T5 Base (LoRA) model accurately captures the key content of reports across a range of lengths and complexity. Produced summaries are of appropriate length, and do not introduce irrelevant or hallucinated information.
 
 Predictions don't match references exactly, but after reading both, it is clear they convey the same information naturally.
 The main difference is the order of explanation rather than the content itself.
 
-From the metrics point of view, all 3 tuned mdoels had the same trend:
+From the metrics point of view, all tuned models had the same trend:
 
 - **ROUGE-1: Highest**
 
@@ -214,9 +245,9 @@ Overall, this aligns with our observations of the predicted summaries - the mode
 
 ### Peak GPU Memory Usage
 
-- **Flan T5 Small**: 4.11 GB
-- **Flan T5 Base**: 11.20 GB
-- **Flan T5 Base + LoRA**: 15.61 GB
+- **FLAN T5 Small**: 4.11 GB
+- **FLAN T5 Base**: 11.20 GB
+- **FLAN-T5 Base (LoRA)**: 15.61 GB
 
 > The Base + LoRA model requires more GPU memory because it has LoRA parameters. Even though fewer parameters are trained, the full base model still needs to be loaded (due to the manual training loop), which increases overall memory usage compared to the standard Base model.
 
@@ -240,6 +271,13 @@ conda activate bio_flan_t5
 ```bash
 python -c "import torch; print(torch.__version__)"
 ```
+
+### Reproducibility
+
+- **Random seed**: Fixed at 0 for consistent data splits and training outcomes.
+- **Configurations**: All hyperparameters and model settings stored in the `configs/` directory.
+- **Environment**: Conda environment (`requirements.yml`) ensures identical package versions across runs.
+- **Hardware**: Experiments conducted on a single NVIDIA A100 (40 GB VRAM) GPU to maintain consistency.
 
 ### Usage
 
@@ -280,13 +318,6 @@ Then run:
 python predict.py
 ```
 
-### Reproducibility
-
-- **Random seed**: Fixed at 0 for consistent data splits and training outcomes.
-- **Configurations**: All hyperparameters and model settings stored in the `configs/` directory.
-- **Environment**: Conda environment (`requirements.yml`) ensures identical package versions across runs.
-- **Hardware**: Experiments conducted on a single NVIDIA A100 (40 GB VRAM) GPU to maintain consistency.
-
 # References
 
 1. Chung, H. W., et al. (2022). Scaling Instruction-Finetuned Language Models. arXiv preprint arXiv:2210.11416. https://arxiv.org/abs/2210.11416
@@ -298,73 +329,3 @@ python predict.py
 4. Minki Jung (2024). Encoder-Decoder vs. Decoder-Only. https://medium.com/@qmsoqm2/auto-regressive-vs-sequence-to-sequence-d7362eda001e
 
 5. Hugging Face. https://huggingface.co/spaces/evaluate-metric/rouge
-
-Flan T5 SMALL MODEL (PRE TRAINED)
-
-```json
-"rouge_scores": {
-    "rouge1": 0.2279,
-    "rouge2": 0.0722,
-    "rougeL": 0.203,
-    "rougeLsum": 0.2031
-}
-```
-
-Flan T5 BASE MODEL (PRE TRAINED)
-
-```json
-"rouge_scores": {
-    "rouge1": 0.2091,
-    "rouge2": 0.0594,
-    "rougeL": 0.1788,
-    "rougeLsum": 0.1789
-}
-```
-
-Flan T5 SMALL MODEL (FINE TUNED)
-
-- Epochs: 3 (Best model selected at `epoch 3`)
-- GPU: A100 (40GB VRAM)
-- Time taken: 1.2 hours
-
-```json
-"rouge_scores": {
-    "rouge1": 0.7247,
-    "rouge2": 0.5506,
-    "rougeL": 0.6789,
-    "rougeLsum": 0.6789
-}
-```
-
-Flan T5 BASE MODEL (FINE TUNED)
-
-- Epochs: 4 (Best model selected at `epoch 4`)
-- GPU: A100 (40GB VRAM)
-- Time taken: 2.2 hours
-
-```json
-"rouge_scores": {
-rouge1: 0.7356
-rouge2: 0.5675
-rougeL: 0.6919
-rougeLsum: 0.6918
-}
-```
-
-Flan T5 BASE MODEL (LoRA + tuned)
-
-- Epochs: 4 (Best model selected at `epoch 4`)
-- GPU: A100 (40GB VRAM)
-- 1.8 hours (108 minutes) (5 minutes faster per training epoch)
-- inference slightly slower
-
-inference: 17 minutes
-
-```json
-"rouge_scores": {
-    "rouge1": 0.7233,
-    "rouge2": 0.5480,
-    "rougeL": 0.6771,
-    "rougeLsum": 0.6771
-}
-```

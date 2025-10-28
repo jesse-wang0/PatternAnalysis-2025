@@ -19,16 +19,9 @@ data:
 training:
   learning_rate: 3e-3
   weight_decay: 0.01
-  num_epochs: 3
-  lr_scheduler: cosine_with_warmup
-  warmup_steps: 500
-  gradient_accumulation_steps: 2
+  num_epochs: 4
 
 saving_logging:
   output_dir: ./t5flan-base-lora-results
   logging_steps: 25
   save_total_limit: 3
-
-generation:
-  max_length: 128 # same as data.max_output_length
-  num_beams: 4

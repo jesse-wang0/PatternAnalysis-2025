@@ -19,7 +19,4 @@ saving_logging:
   output_dir: ./t5flan-small-results
   logging_steps: 50
   save_total_limit: 3
-
-generation:
-  max_length: 128 # same as data.max_output_length
-  num_beams: 4
+  

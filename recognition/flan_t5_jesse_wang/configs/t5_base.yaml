@@ -13,14 +13,9 @@ data:
 training:
   learning_rate: 2e-5
   weight_decay: 0.01
-  num_epochs: 3
-  lr_scheduler: linear_warmup
+  num_epochs: 4
 
 saving_logging:
   output_dir: ./t5flan-base-results
   logging_steps: 50
   save_total_limit: 3
-
-generation:
-  max_length: 128 # same as data.max_output_length
-  num_beams: 4

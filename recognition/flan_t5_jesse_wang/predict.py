@@ -1,3 +1,10 @@
+"""
+Evaluates pretrained, fine-tuned, and LoRA-adapted BioLay-Summ T5 models on the test set.
+Visualizes ROUGE scores and sample summaries.
+
+Results and visualizations are saved to the `results/` directory.
+"""
+
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,11 +17,19 @@ from tqdm import tqdm
 from dataset import load_bio_lay_summ_data
 from modules import PretrainedT5, FineTunedT5, FineTunedT5LoRA
 
+# --- Configs --- 
 NUM_SAMPLES = 10
 RESULT_FOLDER = Path("./results")
 RESULT_FOLDER.mkdir(parents=True, exist_ok=True)
 
 def main():
+    """
+    Runs evaluation for multiple BioLay-Summ T5 models.
+
+    Loads pretrained and fine-tuned models, prepares the test dataset, computes ROUGE metrics,
+    generates sample summaries, and visualizes comparative ROUGE scores.
+    """
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
 
@@ -46,6 +61,19 @@ def test_t5_flan(
     rouge,
     test_loader,
 ):
+    """
+    Evaluates a single T5 model on the test dataset.
+
+    Args:
+        device (torch.device): Device to run inference on.
+        model: A PretrainedT5, FineTunedT5, or FineTunedT5LoRA instance.
+        rouge: Hugging Face ROUGE metric instance.
+        test_loader: DataLoader for the test dataset.
+
+    Returns:
+        dict: Dictionary containing ROUGE scores and sample generations for the model.
+    """
+
     model_name = model.model_name
     if model.fine_tuned:
         if model.lora:
@@ -88,7 +116,7 @@ def test_t5_flan(
                 model.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             )
 
-    # --- Generate sample summaries ---
+    # Generate sample summaries
     random.seed(0)
     sample_indices = random.sample(range(len(all_inputs)), min(NUM_SAMPLES, len(all_inputs)))
     
@@ -135,6 +163,13 @@ def test_t5_flan(
     return result_metrics
 
 def graph_rouges(result_metrics):
+    """
+    Plots and saves a bar chart comparing ROUGE scores across models.
+
+    Args:
+        result_metrics (dict): Dictionary of models with their ROUGE scores.
+    """
+
     # Extract model names and their ROUGE scores
     model_names = list(result_metrics.keys())
     rouge_types = list(next(iter(result_metrics.values()))["rouge_scores"].keys())

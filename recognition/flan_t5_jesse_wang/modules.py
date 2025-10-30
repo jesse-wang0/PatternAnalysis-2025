@@ -1,10 +1,22 @@
+"""
+Defines the T5 model architectures and wrappers for fine-tuning or inference on the BioLay-Summ dataset.
+
+Models:
+    - BioLaySummT5Base: Base class providing shared methods for all variants
+    - PretrainedT5: Loads a pretrained FLAN-T5 model from Hugging Face
+    - FineTunedT5: Loads a fully fine-tuned FLAN-T5 checkpoint (non-LoRA)
+    - FineTunedT5LoRA: Loads a FLAN-T5 model fine-tuned with LoRA adapters
+"""
+
 import torch
 import torch.nn as nn
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model
 
 class BioLaySummT5Base(nn.Module):
-    """Base class with common functionality"""
+    """
+    Base class providing common functionality for all BioLay-Summ T5 variants.
+    """
     def forward(self, input_ids, attention_mask, labels=None):
         return self.model(
             input_ids=input_ids,
@@ -28,7 +40,13 @@ class BioLaySummT5Base(nn.Module):
         return self
 
 class PretrainedT5(BioLaySummT5Base):
-    """Load a pretrained T5 model from HuggingFace"""
+    """
+    Loads a pretrained FLAN-T5 model and tokenizer from Hugging Face.
+
+    Args:
+        model_name (str): Name or path of the pretrained model (e.g., "google/flan-t5-base").
+    """
+
     def __init__(self, model_name):
         super().__init__()
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
@@ -37,7 +55,13 @@ class PretrainedT5(BioLaySummT5Base):
         self.fine_tuned = False
 
 class FineTunedT5(BioLaySummT5Base):
-    """Load a fully fine-tuned T5 model (non-LoRA)"""
+    """
+    Loads a fully fine-tuned FLAN-T5 model from a saved checkpoint.
+
+    Args:
+        model_path (str): Path to the saved fine-tuned model checkpoint.
+    """
+
     def __init__(self, model_path):
         super().__init__()
         checkpoint = torch.load(model_path, map_location='cpu')
@@ -59,7 +83,13 @@ class FineTunedT5(BioLaySummT5Base):
         self.lora = False
 
 class FineTunedT5LoRA(BioLaySummT5Base):
-    """Load a LoRA fine-tuned T5 model"""
+    """
+    Loads a FLAN-T5 model fine-tuned with LoRA adapters and merges the weights for inference.
+
+    Args:
+        model_path (str): Path to the saved LoRA fine-tuned checkpoint.
+    """
+    
     def __init__(self, model_path):
         super().__init__()
         

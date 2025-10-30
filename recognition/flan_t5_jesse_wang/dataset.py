@@ -1,6 +1,15 @@
+"""
+Handles data loading and preprocessing for the BioLay-Summ dataset.
+
+Includes functions to load, tokenize, and split the dataset into train/val/test DataLoaders, and to
+prepare tokenized inputs and labels for model training.
+
+Supports a `sanity_check` mode for quick verification using a small subset of samples.
+"""
+
 from datasets import load_dataset
 from torch.utils.data import DataLoader
-from typing import Dict, Any
+from typing import Tuple
 
 # --- SANITY CHECK SIZE ---
 TINY_SIZE = 20
@@ -14,11 +23,27 @@ def load_bio_lay_summ_data(
     max_output_length: int = 128,
     seed: int = 0,
     sanity_check: bool = False
-) -> Dict[str, Any]:
+) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
-    Loads and tokenizes the BioLaySumm dataset, splits into train/val/test,
-    and returns both tokenized datasets and corresponding DataLoaders.
+    Loads, tokenizes, and splits the BioLaySumm dataset into train/val/test sets.
+
+    Applies preprocessing, builds PyTorch DataLoaders, and supports a `sanity_check` mode
+    for quick pipeline testing with limited samples.
+
+    Args:
+        tokenizer: Hugging Face tokenizer for text encoding.
+        batch_size (int, optional): Training batch size. Defaults to 8.
+        eval_batch_size (int, optional): Evaluation batch size. Defaults to 4.
+        train_split_ratio (float, optional): Fraction of data for training. Defaults to 0.8.
+        max_input_length (int, optional): Max token length for inputs. Defaults to 512.
+        max_output_length (int, optional): Max token length for outputs. Defaults to 128.
+        seed (int, optional): Random seed. Defaults to 0.
+        sanity_check (bool, optional): Use small subset for debugging. Defaults to False.
+
+    Returns:
+        Tuple[DataLoader, DataLoader, DataLoader]: Train, val, and test loaders.
     """
+
     dataset = load_dataset("BioLaySumm/BioLaySumm2025-LaymanRRG-opensource-track")
     
     # Split train into train + validation
@@ -103,6 +128,22 @@ def preprocess(
     max_input_length: int, 
     max_output_length: int
 ) -> dict:
+    """
+    Tokenizes and formats a batch of radiology/layman text pairs.
+
+    Encodes inputs and targets, applies padding/truncation, and replaces label padding tokens
+    with -100 to ignore them in loss computation.
+
+    Args:
+        batch (dict): Batch with 'radiology_report' and 'layman_report' fields.
+        tokenizer: Hugging Face tokenizer.
+        max_input_length (int): Max input length.
+        max_output_length (int): Max output length.
+
+    Returns:
+        dict: Tokenized batch with `input_ids`, `attention_mask`, and `labels`.
+    """
+    
     # Prepend instruction prompt
     prompt = [f"Provide a layman's interpretation of this medical report:\n{r}" 
               for r in batch["radiology_report"]]

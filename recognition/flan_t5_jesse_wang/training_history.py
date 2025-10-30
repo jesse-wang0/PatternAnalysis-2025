@@ -1,9 +1,22 @@
+"""
+Utility module for visualizing training and validation loss curves.
+
+Used to generate and save loss plots for individual or multiple BioLay-Summ model runs.
+"""
+
 import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
 
 def plot_training_history(training_history_file: Path, results_folder: Path):
-    """Plot and save training/validation loss curves"""
+    """
+    Plots and saves training and validation loss curves from a single run.
+
+    Args:
+        training_history_file (Path): Path to the CSV log file containing loss values.
+        results_folder (Path): Directory where the plot will be saved.
+    """
+
     results_folder = Path(results_folder)
     
     # Load training history
@@ -41,17 +54,18 @@ def plot_training_history(training_history_file: Path, results_folder: Path):
 
 def plot_multiple_training_histories(model_histories: dict, results_folder: Path):
     """
-    Plot and save training/validation loss curves for multiple models, aligned by epoch.
-    Each model uses a distinct color for its train and eval curves for contrast:
-    - Solid line → training loss
-    - Dash-dot line → evaluation loss
+    Plots and saves comparative loss curves across multiple model runs.
+
+    Args:
+        model_histories (dict): Mapping of model names to their training history CSV files.
+        results_folder (Path): Directory where the comparison plot will be saved.
     """
+    
     results_folder = Path(results_folder)
     results_folder.mkdir(parents=True, exist_ok=True)
 
     plt.figure(figsize=(14, 8))
 
-    # Manual color assignment for strong contrast
     train_colors = {
         "Flan-T5 Small": "#ff7f0e",  # orange
         "Flan-T5 Base": "#1f77b4",  # blue
@@ -95,12 +109,3 @@ def plot_multiple_training_histories(model_histories: dict, results_folder: Path
     output_path = results_folder / 'loss_curve_comparison_by_epoch.png'
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"✓ Loss curve (by epoch) saved to {output_path}")
-
-plot_multiple_training_histories(
-    {
-        "Flan-T5 Small": "final_res/small_history.csv",
-        "Flan-T5 Base": "final_res/base_history.csv",
-        "Flan-T5 Base + LoRA": "final_res/base_lora_history.csv"
-    },
-    results_folder="final_res",
-)

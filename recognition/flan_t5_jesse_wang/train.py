@@ -1,25 +1,42 @@
+"""
+Handles training of BioLay-Summ T5 models, including loss tracking, checkpointing, and visualization.
+LoRA fine-tuning is supported if specified in the config.
+
+Usage:
+    python train.py --config <path_to_config.yaml>
+"""
+
 import os
+import sys
 from pathlib import Path
-import yaml
-import torch
-from torch import amp
+from typing import Any, Dict, Optional
 import pandas as pd
-from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, PeftModel
+from peft import LoraConfig, PeftModel, get_peft_model, get_peft_model_state_dict
+import torch
+from torch import amp, nn
+from torch.optim import Optimizer
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer
-from typing import Dict, Any, Optional
-from torch.utils.data import DataLoader
-from torch.optim import Optimizer
-from torch import nn
-import sys
+import yaml
 
 from dataset import load_bio_lay_summ_data
 from modules import PretrainedT5
 from training_history import plot_training_history
 
+# Disable HuggingFace tokenizer parallelism warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-def main(config_path):
+def main(config_path: Path):
+    """
+    Entry point for training a T5 model on the BioLay-Summ dataset.
+
+    Loads configuration, prepares dataset and model (optionally with LoRA).
+
+    Args:
+        config_path (Path): Path to the YAML configuration file.
+    """
+
     config = load_config(config_path)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
@@ -67,6 +84,25 @@ def train_t5_flan(
     val_loader: DataLoader,
     lora_params: Optional[Dict[str, Any]] = None
 ) -> nn.Module:
+    """
+    Train a T5 model with optional LoRA adapters on a dataset.
+
+    Trains the model with mixed precision and gradient clipping, tracks losses, 
+    saves the best checkpoint, and logs training history with visualizations.
+
+    Args:
+        device (torch.device): Device to run training on (CPU or GPU).
+        config (Dict[str, Any]): Training and model configuration dictionary.
+        model (nn.Module): The T5 model to train.
+        optimizer (Optimizer): Optimizer for model parameters.
+        train_loader (DataLoader): DataLoader for the training dataset.
+        val_loader (DataLoader): DataLoader for the validation dataset.
+        lora_params (Optional[Dict[str, Any]]): LoRA adapter parameters if using PEFT.
+
+    Returns:
+        nn.Module: The trained model.
+    """
+
     OUTPUT_PATH = Path(config["saving_logging"]["output_dir"])
     OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -213,7 +249,20 @@ def train_t5_flan(
     
     return model
 
-def load_config(config_path: str):
+def load_config(config_path: Path):
+    """
+    Load a YAML configuration file.
+
+    Args:
+        config_path (Path): Path to the YAML config file.
+
+    Returns:
+        Dict[str, Any]: Parsed configuration dictionary.
+
+    Raises:
+        FileNotFoundError: If the specified configuration file does not exist.
+    """
+
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
@@ -222,6 +271,13 @@ def load_config(config_path: str):
     return config
 
 def print_parameter_count(model):
+    """
+    Print a summary of the model parameters.
+
+    Args:
+        model (nn.Module or PeftModel): Model to analyze.
+    """
+
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     trainable_fraction = (trainable_params / total_params) * 100

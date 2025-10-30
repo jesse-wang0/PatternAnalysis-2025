@@ -236,6 +236,8 @@ Overall, this aligns with our observations of the predicted summaries - the mode
 
 ## Hardware & Environment
 
+Training and inference done on the Rangpur cluster:
+
 | Component   | Version / Specification       |
 | ----------- | ----------------------------- |
 | **GPU**     | NVIDIA A100 PCIe (40 GB VRAM) |

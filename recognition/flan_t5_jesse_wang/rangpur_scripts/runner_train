@@ -1,0 +1,16 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=8
+#SBATCH --cpus-per-task=1
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:1
+
+#SBATCH --job-name=flan-train
+
+#SBATCH --time=05:00:00
+
+#SBATCH -o t5flan/train.out
+#SBATCH -e t5flan/train.err
+
+conda activate torch
+python train.py --config configs/t5_base_peft.yaml
